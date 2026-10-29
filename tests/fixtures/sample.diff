@@ -1,0 +1,31 @@
+diff --git a/README.md b/README.md
+index 0805455..d67cb01 100644
+--- a/README.md
++++ b/README.md
+@@ -1 +1,2 @@
+ # Demo
++New line.
+diff --git a/app/users.py b/app/users.py
+index caae231..a0cdd08 100644
+--- a/app/users.py
++++ b/app/users.py
+@@ -9,3 +9,19 @@ def get_user(user_id):
+     conn = get_conn()
+     cur = conn.execute("SELECT * FROM users WHERE id = ?", (user_id,))
+     return cur.fetchone()
++
++
++def find_users(name, tags=[]):
++    conn = get_conn()
++    query = f"SELECT * FROM users WHERE name LIKE '%{name}%'"
++    rows = conn.execute(query).fetchall()
++    tags.append(name)
++    return rows
++
++
++def load_config(path):
++    try:
++        with open(path) as f:
++            return f.read()
++    except:
++        return None

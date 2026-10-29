@@ -1,0 +1,58 @@
+```json
+{
+  "summary": "Adds user search and config loading. The search query is injectable and the new helpers have two classic Python pitfalls.",
+  "comments": [
+    {
+      "file": "app/users.py",
+      "line": 16,
+      "severity": "critical",
+      "category": "security",
+      "message": "SQL injection: `name` is interpolated into the query with an f-string. Any caller passing user input can read or modify arbitrary rows.",
+      "suggested_fix": "rows = conn.execute(\"SELECT * FROM users WHERE name LIKE ?\", (f\"%{name}%\",)).fetchall()",
+      "confidence": 0.97
+    },
+    {
+      "file": "app/users.py",
+      "line": 14,
+      "severity": "major",
+      "category": "bug",
+      "message": "Mutable default argument: `tags=[]` is shared across calls, so `tags.append(name)` leaks state between unrelated requests.",
+      "suggested_fix": "def find_users(name, tags=None):\n    tags = [] if tags is None else tags",
+      "confidence": 0.92
+    },
+    {
+      "file": "app/users.py",
+      "line": 26,
+      "severity": "minor",
+      "category": "maintainability",
+      "message": "Bare `except:` also swallows KeyboardInterrupt and SystemExit and hides the real error. Catch OSError explicitly.",
+      "suggested_fix": "except OSError:",
+      "confidence": 0.85
+    },
+    {
+      "file": "app/users.py",
+      "line": 15,
+      "severity": "minor",
+      "category": "performance",
+      "message": "Opening a new connection per call may be slow under load; consider pooling.",
+      "confidence": 0.3
+    },
+    {
+      "file": "app/users.py",
+      "line": 40,
+      "severity": "major",
+      "category": "bug",
+      "message": "Connection is never closed at the end of the module.",
+      "confidence": 0.8
+    },
+    {
+      "file": "app/models.py",
+      "line": 3,
+      "severity": "minor",
+      "category": "style",
+      "message": "Unused import in a file that is not part of this diff.",
+      "confidence": 0.9
+    }
+  ]
+}
+```
