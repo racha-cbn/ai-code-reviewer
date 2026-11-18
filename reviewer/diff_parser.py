@@ -48,6 +48,9 @@ def parse_diff(diff_text: str, extensions: tuple[str, ...] = DEFAULT_EXTENSIONS)
                     out.append(f"     - {line.value.rstrip()}")
                     continue
                 n = line.target_line_no
+                if n is None:
+                    # e.g. "\ No newline at end of file": not a real line.
+                    continue
                 fd.commentable_lines.add(n)
                 if line.is_added:
                     fd.added_lines.add(n)
