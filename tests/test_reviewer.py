@@ -243,3 +243,25 @@ def test_anthropic_client_sends_expected_arguments(monkeypatch):
         "messages": [{"role": "user", "content": "USER"}],
     }  # exact match: no `temperature`, which anthropic>=2.3 rejects
     assert reply == '{"summary": "ok", "comments": []}'  # text blocks only, joined
+
+
+# --- diff parser edge cases ---------------------------------------------------
+
+NO_NEWLINE_DIFF = """diff --git a/n.py b/n.py
+index 1111111..2222222 100644
+--- a/n.py
++++ b/n.py
+@@ -1 +1 @@
+-x = 1
+\\ No newline at end of file
++x = 2
+\\ No newline at end of file
+"""
+
+
+def test_parser_ignores_no_newline_marker():
+    files = parse_diff(NO_NEWLINE_DIFF)
+    assert [f.path for f in files] == ["n.py"]
+    assert files[0].added_lines == {1}
+    assert files[0].commentable_lines == {1}  # no None from the marker line
+    assert "No newline" not in files[0].render()
