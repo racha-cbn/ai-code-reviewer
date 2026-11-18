@@ -26,19 +26,18 @@ class LLMClient(Protocol):
 
 
 class AnthropicClient:
-    def __init__(self, model: str = DEFAULT_MODEL, max_tokens: int = 4096, temperature: float = 0.0):
+    def __init__(self, model: str = DEFAULT_MODEL, max_tokens: int = 4096):
         import anthropic  # lazy: tests don't need the SDK or a key
 
         self._client = anthropic.Anthropic()  # reads ANTHROPIC_API_KEY
         self.model = model
         self.max_tokens = max_tokens
-        self.temperature = temperature
 
     def complete(self, system: str, user: str) -> str:
+        # anthropic>=2.3 Messages.create() has no `temperature` parameter.
         resp = self._client.messages.create(
             model=self.model,
             max_tokens=self.max_tokens,
-            temperature=self.temperature,
             system=system,
             messages=[{"role": "user", "content": user}],
         )
