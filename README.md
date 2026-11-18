@@ -4,6 +4,16 @@ LLM code reviewer for Python pull requests. Takes a unified diff, returns **stru
 
 > Phase 0: skeleton. Next phases add static-analysis grounding, an evaluation harness on SWR-Bench, and ablations.
 
+## Quick start
+
+The tool sends the Python changes of a diff to an LLM, keeps only comments that point to real lines of the diff, and prints them as JSON or text. To try it offline, no API key needed:
+
+```bash
+python -m venv .venv && source .venv/bin/activate
+pip install -e ".[dev]"
+reviewer --diff tests/fixtures/sample.diff --mock tests/fixtures/mock_response.json --format text --show-dropped
+```
+
 ## How it works
 
 ```
