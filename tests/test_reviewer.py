@@ -201,3 +201,45 @@ def test_cli_reports_ollama_error_cleanly(monkeypatch, capsys):
     code = main(["--diff", str(FX / "sample.diff"), "--provider", "ollama"])
     assert code == 2
     assert "Is it running" in capsys.readouterr().err
+
+
+# --- Anthropic client (SDK is faked; no network, no key) ---------------------
+
+import sys
+import types
+
+
+def _fake_anthropic(monkeypatch):
+    """Install a fake `anthropic` module that records what create() receives."""
+    sent = {}
+
+    class _Messages:
+        def create(self, **kwargs):
+            sent.update(kwargs)
+            return types.SimpleNamespace(content=[
+                types.SimpleNamespace(type="thinking", thinking="ignored"),
+                types.SimpleNamespace(type="text", text='{"summary": "ok", '),
+                types.SimpleNamespace(type="text", text='"comments": []}'),
+            ])
+
+    class _Anthropic:
+        def __init__(self, **kwargs):
+            self.messages = _Messages()
+
+    monkeypatch.setitem(sys.modules, "anthropic", types.SimpleNamespace(Anthropic=_Anthropic))
+    return sent
+
+
+def test_anthropic_client_sends_expected_arguments(monkeypatch):
+    sent = _fake_anthropic(monkeypatch)
+    client = AnthropicClient(model="claude-test", max_tokens=123)
+
+    reply = client.complete("SYS", "USER")
+
+    assert sent == {
+        "model": "claude-test",
+        "max_tokens": 123,
+        "system": "SYS",
+        "messages": [{"role": "user", "content": "USER"}],
+    }  # exact match: no `temperature`, which anthropic>=2.3 rejects
+    assert reply == '{"summary": "ok", "comments": []}'  # text blocks only, joined
