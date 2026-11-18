@@ -4,6 +4,7 @@ Examples:
     git diff main...HEAD | reviewer
     reviewer --git main...HEAD --format text
     reviewer --diff tests/fixtures/sample.diff --mock tests/fixtures/mock_response.json
+    reviewer --diff tests/fixtures/sample.diff --provider ollama --format text
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import argparse
 import subprocess
 import sys
 
-from .llm_client import get_client
+from .llm_client import PROVIDERS, OllamaError, get_client
 from .pipeline import ReviewParseError, review_diff
 from .schema import ReviewResult, Severity
 
@@ -54,7 +55,10 @@ def main(argv: list[str] | None = None) -> int:
     src.add_argument("--diff", help="path to a unified diff file")
     src.add_argument("--git", metavar="RANGE", help="git range, e.g. main...HEAD")
     p.add_argument("--pr-description", help="PR description text (extra context)")
-    p.add_argument("--model", help="override model id (default: $REVIEWER_MODEL or built-in)")
+    p.add_argument("--provider", choices=PROVIDERS, default="anthropic",
+                   help="LLM backend: anthropic (needs ANTHROPIC_API_KEY) or ollama (local, free)")
+    p.add_argument("--model", help="override model id (default: $REVIEWER_MODEL for anthropic, "
+                                   "$REVIEWER_OLLAMA_MODEL or qwen2.5-coder:7b for ollama)")
     p.add_argument("--mock", metavar="JSON", help="replay a canned model response (no API call)")
     p.add_argument("--min-confidence", type=float, default=0.5)
     p.add_argument("--format", choices=["json", "text"], default="json")
@@ -64,11 +68,11 @@ def main(argv: list[str] | None = None) -> int:
     args = p.parse_args(argv)
 
     diff_text = _read_diff(args)
-    client = get_client(model=args.model, mock_path=args.mock)
+    client = get_client(model=args.model, mock_path=args.mock, provider=args.provider)
 
     try:
         result = review_diff(diff_text, client, args.pr_description, args.min_confidence)
-    except ReviewParseError as e:
+    except (ReviewParseError, OllamaError) as e:
         print(f"error: {e}", file=sys.stderr)
         return 2
 

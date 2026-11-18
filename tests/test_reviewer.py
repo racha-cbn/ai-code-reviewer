@@ -103,3 +103,101 @@ def test_cli_fail_on_returns_1(capsys):
 def test_cli_json_ok(capsys):
     assert main(["--diff", str(FX / "sample.diff"), "--mock", str(MOCK)]) == 0
     assert '"files_reviewed"' in capsys.readouterr().out
+
+
+# --- Ollama client (HTTP is faked; Ollama does not need to be installed) ----
+
+import io
+import json
+import urllib.error
+import urllib.request
+
+from reviewer.llm_client import AnthropicClient, OllamaClient, OllamaError, get_client
+
+
+class _FakeResponse(io.BytesIO):
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+def _fake_urlopen(monkeypatch, *, reply=None, error=None):
+    sent = {}
+
+    def fake(req, timeout=None):
+        sent["url"] = req.full_url
+        sent["body"] = json.loads(req.data)
+        if error is not None:
+            raise error
+        return _FakeResponse(json.dumps(reply).encode())
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake)
+    return sent
+
+
+def test_ollama_sends_prompts_and_returns_content(monkeypatch):
+    sent = _fake_urlopen(monkeypatch, reply={"message": {"role": "assistant", "content": '{"x": 1}'}})
+    client = OllamaClient(model="qwen2.5-coder:7b", base_url="http://localhost:11434")
+
+    assert client.complete("SYS", "USER") == '{"x": 1}'
+    assert sent["url"] == "http://localhost:11434/api/chat"
+    body = sent["body"]
+    assert body["model"] == "qwen2.5-coder:7b"
+    assert body["messages"] == [{"role": "system", "content": "SYS"}, {"role": "user", "content": "USER"}]
+    assert body["stream"] is False and body["format"] == "json"
+    assert body["options"]["num_ctx"] > 4096   # Ollama's default would truncate our prompt
+
+
+def test_ollama_end_to_end_through_pipeline(monkeypatch):
+    _fake_urlopen(monkeypatch, reply={"message": {"content": MOCK.read_text()}})
+    result = review_diff(DIFF, OllamaClient(model="qwen2.5-coder:7b"))
+    assert result.model == "qwen2.5-coder:7b"
+    assert len(result.review.comments) == 3
+
+
+def test_ollama_not_running(monkeypatch):
+    _fake_urlopen(monkeypatch, error=urllib.error.URLError(ConnectionRefusedError(61, "Connection refused")))
+    with pytest.raises(OllamaError, match="Is it running"):
+        OllamaClient().complete("s", "u")
+
+
+def test_ollama_model_not_downloaded(monkeypatch):
+    err = urllib.error.HTTPError("http://localhost:11434/api/chat", 404, "Not Found", {},
+                                 io.BytesIO(b'{"error": "model \'nope:1b\' not found"}'))
+    _fake_urlopen(monkeypatch, error=err)
+    with pytest.raises(OllamaError, match=r"ollama pull nope:1b"):
+        OllamaClient(model="nope:1b").complete("s", "u")
+
+
+def test_ollama_timeout(monkeypatch):
+    _fake_urlopen(monkeypatch, error=TimeoutError("timed out"))
+    with pytest.raises(OllamaError, match="timed out"):
+        OllamaClient(timeout=1).complete("s", "u")
+
+
+def test_get_client_selects_provider(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert isinstance(get_client(provider="ollama"), OllamaClient)   # no key needed
+    assert get_client(provider="ollama", model="qwen2.5-coder:14b").model == "qwen2.5-coder:14b"
+    assert isinstance(get_client(provider="ollama", mock_path=str(MOCK)), MockClient)  # --mock still wins
+    with pytest.raises(ValueError):
+        get_client(provider="openai")
+
+
+def test_get_client_default_is_still_anthropic(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test-not-used")
+    assert isinstance(get_client(), AnthropicClient)
+
+
+def test_ollama_host_env_without_scheme(monkeypatch):
+    monkeypatch.setenv("OLLAMA_HOST", "127.0.0.1:11500")
+    assert OllamaClient().base_url == "http://127.0.0.1:11500"
+
+
+def test_cli_reports_ollama_error_cleanly(monkeypatch, capsys):
+    _fake_urlopen(monkeypatch, error=urllib.error.URLError(ConnectionRefusedError(61, "Connection refused")))
+    code = main(["--diff", str(FX / "sample.diff"), "--provider", "ollama"])
+    assert code == 2
+    assert "Is it running" in capsys.readouterr().err
